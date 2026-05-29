@@ -90,7 +90,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "treeverse"
+name = "treeversal"
 version = "0.1.0"
 dependencies = [
  "console",

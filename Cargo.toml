@@ -1,5 +1,5 @@
 [package]
-name = "treeverse"
+name = "treeversal"
 version = "0.1.0"
 edition = "2024"
 authors = ["Petrichor Park <petrichor.park@canonical.com>"]

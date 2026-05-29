@@ -1,5 +1,5 @@
 use console::Key;
-use treeverse::{
+use treeversal::{
   NodeDefinitionType, TreeDefinition, TreeNodeDefinition,
   console_driver::{ConsoleDriver, Palette, StyledMsgAndData, TakeInput},
 };
@@ -12,7 +12,7 @@ fn msg(s: impl AsRef<str>) -> StyledMsgAndData<()> {
 }
 
 pub fn main() {
-  use treeverse::dsl::*;
+  use treeversal::dsl::*;
 
   let bread_branch = TreeNodeDefinition::new_with_children(
     NodeDefinitionType::PickOneChild { mandatory: true },
