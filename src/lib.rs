@@ -2,7 +2,7 @@
 // ^^ brownie points
 
 mod interactor;
-pub use interactor::TreeInteractor;
+pub use interactor::*;
 pub mod dsl;
 
 #[cfg(feature = "console")]

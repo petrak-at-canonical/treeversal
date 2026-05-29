@@ -383,7 +383,7 @@ impl TreeInteractorNode {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeInteractionError {
   /// [`TreeInteraction::EditPicked`] on an unpickable node
   TriedToEditUnpickableNode,

@@ -11,9 +11,10 @@ console = { version = "0.16.3", optional = true }
 getset = "0.1.6"
 
 [features]
-default = ["console"]
-console = ["dep:console"]
 
 [[example]]
 name = "console_demo"
 required-features = ["console"]
+
+[dev-dependencies]
+fastrand = "2.4.1"
