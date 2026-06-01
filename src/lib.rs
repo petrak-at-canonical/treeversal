@@ -1,3 +1,31 @@
+//! ```text
+//! Customize your sandwich
+//! ├─Pick a bread (mandatory)
+//! │  ├─(o) white
+//! │  ├─( ) wheat
+//! │  │  └─[ ] gluten-free wheat bread?
+//! │  └─( ) rye
+//! ├─Pick a meat
+//! │  ├─( ) ham
+//! │  ├─( ) corned beef
+//! │  ├─( ) turkey
+//! │  └─( ) chicken
+//! ├─[ ] Pick vegetables
+//! │  ├─[ ] lettuce
+//! │  ├─[ ] tomato
+//! │  ├─[ ] peppers
+//! │  ├─[ ] onions
+//! │  │  ├─(o) red onions
+//! │  │  ├─( ) white onions
+//! │  │  └─( ) grilled onions
+//! │  └─[ ] avocado
+//! ├>[ ] Pick sauces
+//! │  ├─[ ] mayonnaise
+//! │  ├─[ ] barbeque sauce
+//! │  └─[ ] oil and vinegar
+//! └─{?} Finished?
+//! ```
+//!
 //! A library for traversal and manipulation of a tree.
 //! Create a tree of nodes as a [`TreeNodeDefinition`],
 //! feed it to a [`TreeInteractor`],

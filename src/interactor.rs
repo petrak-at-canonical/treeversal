@@ -47,6 +47,9 @@ pub enum TreeInteraction {
   ExitNode,
 }
 
+/// How to change the picked state of a node.
+///
+/// See [`TreeInteraction::EditPicked`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum EditPickedType {
   /// Pick this node
@@ -383,12 +386,13 @@ impl TreeInteractorNode {
   }
 }
 
+/// What went wrong when you did an invalid operation on the tree
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TreeInteractionError {
   /// [`TreeInteraction::EditPicked`] on an unpickable node
   TriedToEditUnpickableNode,
   /// [`TreeInteraction::EnterNode`] on node with no children
   NodeHasNoChildren,
-  /// [`TreeInteraction::ExitNode`] on the root node
+  /// [`TreeInteraction::ExitNode`] on a child of the root node
   NodeHasNoParent,
 }
