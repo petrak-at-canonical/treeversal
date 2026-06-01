@@ -32,7 +32,7 @@ Customize your sandwich
 ```
 
 A library for traversal and manipulation of a tree.
-Create a tree of nodes as a `TreeDefinitionNode`, feed it to a `TreeInteractor`, and manipulate the tree by applying `TreeInteraction`s.
+Create a tree of nodes as a `TreeNodeDefinition`, feed it to a `TreeInteractor`, and manipulate the tree by applying `TreeInteraction`s.
 
 The tree definition, the tree interaction state, and the driver are all independent.
 This crate comes with a driver for the terminal using the `console` crate (shown above),

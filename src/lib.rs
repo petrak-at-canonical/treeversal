@@ -1,7 +1,7 @@
 //! A library for traversal and manipulation of a tree.
-//! Create a tree of nodes as a [`TreeDefinitionNode`],
+//! Create a tree of nodes as a [`TreeNodeDefinition`],
 //! feed it to a [`TreeInteractor`],
-//! and manipulate the tree by applying [`TreeInteractions`].
+//! and manipulate the tree by applying [`TreeInteraction`]s.
 
 #![forbid(unsafe_code)]
 // ^^ brownie points
