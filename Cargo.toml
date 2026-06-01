@@ -1,10 +1,13 @@
 [package]
 name = "treeversal"
-version = "0.1.0"
+description = "Traverse and manipulate a tree"
+version = "0.1.1"
 edition = "2024"
 authors = ["Petrichor Park <petrichor.park@canonical.com>"]
-# repository = "https://github.com/petrak-at-canonical/tree-installer-sketch"
+homepage = "https://github.com/petrak-at-canonical/treeversal"
+repository = "https://github.com/petrak-at-canonical/treeversal"
 license = "MIT"
+categories = ["config", "gui", "visualization"]
 
 [dependencies]
 console = { version = "0.16.3", optional = true }
