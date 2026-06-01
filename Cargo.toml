@@ -1,12 +1,13 @@
 [package]
 name = "treeversal"
-description = "Traverse and manipulate a tree"
-version = "0.1.1"
-edition = "2024"
+version = "0.1.2"
 authors = ["Petrichor Park <petrichor.park@canonical.com>"]
+description = "Traverse and manipulate a tree"
+license = "MIT"
+edition = "2024"
+documentation = "https://docs.rs/quickcheck"
 homepage = "https://github.com/petrak-at-canonical/treeversal"
 repository = "https://github.com/petrak-at-canonical/treeversal"
-license = "MIT"
 categories = ["config", "gui", "visualization"]
 
 [dependencies]

@@ -1,5 +1,8 @@
 # treeversal
 
+[![Crates.io Version](https://img.shields.io/crates/v/treeversal)](https://crates.io/crates/treeversal)
+[![docs.rs](https://img.shields.io/docsrs/treeversal)](https://docs.rs/treeversal)
+
 ```
 Customize your sandwich
 ├─Pick a bread (mandatory)
