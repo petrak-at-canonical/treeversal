@@ -24,6 +24,17 @@ pub struct StyledMsgAndData<T> {
   pub data: T,
 }
 
+impl<T> StyledMsgAndData<T> {
+  pub fn new(message: StyledObject<String>, data: T) -> Self {
+    Self { message, data }
+  }
+
+  /// Create with an unstyled string
+  pub fn unstyled(message: impl AsRef<str>, data: T) -> Self {
+    Self::new(console::style(message.as_ref().to_owned()), data)
+  }
+}
+
 impl<T> ConsoleDriver<T> {
   /// Create a new driver.
   pub fn new(term: Term, palette: Palette, tree: TreeDefinition<StyledMsgAndData<T>>) -> Self {
