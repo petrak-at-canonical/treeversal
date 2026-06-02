@@ -84,14 +84,14 @@ impl<T> ConsoleDriver<T> {
         .clear_last_lines(self.interactor.tree().root.total_len() + 1)
         .unwrap();
     }
-    self.print_node_by_path(Vec::new(), String::new());
+    self.print_node_by_path(Vec::new(), Vec::new());
     self.printed_once = true;
   }
 
-  /// `scaffolding` is the leading pipes and spaces.
+  /// `scaffolding`'s values are whether to include a pipe or not.
   ///
   /// Also directs the printing all of its children.
-  fn print_node_by_path(&self, print_path: Vec<usize>, mut scaffolding: String) {
+  fn print_node_by_path(&self, print_path: Vec<usize>, mut scaffolding: Vec<bool>) {
     let node = self
       .interactor
       .select_node_via_path(print_path.iter().copied())
@@ -135,8 +135,13 @@ impl<T> ConsoleDriver<T> {
       } else {
         &self.palette.unselected_connector
       };
-      // TODO: does it look better with or without a space before the title
-      let line = format!("{}{}{}", &scaffolding, pipe, indicator);
+      let scaffolding_chars = scaffolding
+        .iter()
+        .map(|pipe| format!("{}  ", if *pipe { self.palette.pipe_vert } else { ' ' }))
+        .collect::<Vec<_>>();
+      let scaffolding_str = scaffolding_chars.concat();
+
+      let line = format!("{}{}{}", scaffolding_str, pipe, indicator);
       write!(&self.term, "{}", additional_style.apply_to(line)).unwrap();
     }
 
@@ -201,13 +206,8 @@ impl<T> ConsoleDriver<T> {
     // consider extending the scaffolding
     if let Some(parent) = mb_parent {
       let index_in_parent = print_path[print_path.len() - 1];
-      let last_in_parent = parent.children.len() == index_in_parent;
-      let scaffold_char = if last_in_parent {
-        ' '
-      } else {
-        self.palette.pipe_vert
-      };
-      scaffolding += &format!("{}  ", scaffold_char);
+      let last_in_parent = parent.children.len() - 1 == index_in_parent;
+      scaffolding.push(!last_in_parent);
     }
 
     for (idx, _) in node.children.iter().enumerate() {

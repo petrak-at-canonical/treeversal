@@ -51,7 +51,7 @@ pub fn main() {
   let sauce_branch = pick_many(msg("Pick sauces"))
     .with_child(text(msg("mayonnaise")))
     .with_child(text(msg("barbeque sauce")))
-    .with_child(text(msg("oil and vinegar")));
+    .with_child(pick_up_to_one(msg("oil and vinegar")).with_child(text(msg("extra vinegar?"))));
 
   let tree = TreeNodeDefinition::new(NodeDefinitionType::Text, msg("Customize your sandwich"))
     .with_child(bread_branch)
