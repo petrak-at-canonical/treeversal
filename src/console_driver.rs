@@ -163,8 +163,36 @@ impl<T> ConsoleDriver<T> {
         write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
       }
       NodeDefinitionType::Text => {
-        // TODO: Perhaps write half-slash box
-        // Otherwise no-op
+        // Try the special casing for [/]
+        let checkbox_kids = node
+          .children
+          .iter()
+          .zip(interactor.children().iter())
+          .filter_map(|(kid, ikid)| {
+            if kid.ty == NodeDefinitionType::PickMany {
+              Some(ikid.picked())
+            } else {
+              None
+            }
+          })
+          .collect::<Vec<_>>();
+        if !checkbox_kids.is_empty() {
+          let picked_count = checkbox_kids
+            .iter()
+            .filter(|pick| **pick == Some(true))
+            .count();
+          let boxx = match picked_count {
+            // none of them
+            0 => &self.palette.unpicked_manybox,
+            // some of them
+            x if x < checkbox_kids.len() => &self.palette.some_picked_manybox,
+            // all of them
+            x if x == checkbox_kids.len() => &self.palette.picked_manybox,
+            _ => unreachable!(),
+          };
+          write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
+        }
+        // else no special case is necessary
       }
       NodeDefinitionType::AllDone => {
         write!(

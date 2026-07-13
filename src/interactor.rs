@@ -150,14 +150,8 @@ impl<T> TreeInteractor<T> {
   /// - `Err` if there was an error
   pub fn interact(&mut self, interaction: TreeInteraction) -> Result<bool, TreeInteractionError> {
     match interaction {
-      TreeInteraction::EditPicked(ept) => {
-        let node = self.selected_node();
-        match node.ty {
-          NodeDefinitionType::Text => Err(TreeInteractionError::TriedToEditUnpickableNode),
-          NodeDefinitionType::AllDone => Ok(true),
-          _ => self.perform_pick(ept).map(|()| false),
-        }
-      }
+      // pop out logic because it is rather complicated
+      TreeInteraction::EditPicked(ept) => self.perform_pick(ept),
       TreeInteraction::SeekSibling { next } => {
         let (&index_in_parent, path_to_parent) = self
           .cursor_path
@@ -232,11 +226,54 @@ impl<T> TreeInteractor<T> {
   // based on what the user has selected,
   // decide whether to pick or unpick that path.
   // then cascade invariants.
-  fn perform_pick(&mut self, ept: EditPickedType) -> Result<(), TreeInteractionError> {
+  fn perform_pick(&mut self, ept: EditPickedType) -> Result<bool, TreeInteractionError> {
     let node = self.selected_node();
+    // do some special cases
+    if node.ty == NodeDefinitionType::AllDone {
+      return Ok(true);
+    } else if node.ty == NodeDefinitionType::Text {
+      // check if this is a `[/]` node
+      let checkbox_kids = node
+        .children
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, kid)| {
+          if kid.ty == NodeDefinitionType::PickMany {
+            let mut kid_path = self.cursor_path.clone();
+            kid_path.push(idx);
+            let ikid = self
+              .select_interactor_node_via_path(kid_path.into_iter())
+              .unwrap();
+            Some(ikid.picked)
+          } else {
+            None
+          }
+        })
+        .collect::<Vec<_>>();
+      if checkbox_kids.is_empty() {
+        return Err(TreeInteractionError::TriedToEditUnpickableNode);
+      }
+      let all_picked = checkbox_kids.iter().all(|p| *p == Some(true));
+      let new_state = !all_picked;
+      // fix up the children
+      let kid_count = node.children.len();
+      for i in 0..kid_count {
+        let mut kid_path = self.cursor_path.clone();
+        kid_path.push(i);
+        let kid = self.select_node_via_path(kid_path.iter().cloned()).unwrap();
+        if kid.ty == NodeDefinitionType::PickMany {
+          let ikid_mut = self
+            .select_interactor_node_mut_via_path(kid_path.iter().cloned())
+            .unwrap();
+          ikid_mut.picked = Some(new_state);
+          self.cascade_invariants_up(kid_path.clone(), new_state);
+          self.cascade_invariants_down(kid_path.clone(), new_state);
+        }
+      }
 
-    // clone so we can borrow later
-    let parent_path = self.cursor_path[0..self.cursor_path.len() - 1].to_owned();
+      return Ok(false);
+    }
+
     let ideal_next_state = match ept {
       EditPickedType::Select => true,
       EditPickedType::Deselect => false,
@@ -248,9 +285,6 @@ impl<T> TreeInteractor<T> {
     };
 
     let node = self.selected_node();
-
-    // reborrows
-    let node = self.selected_node();
     match node.ty {
       NodeDefinitionType::Text | NodeDefinitionType::AllDone => unreachable!("already handled"),
       NodeDefinitionType::PickMany => {
@@ -260,7 +294,7 @@ impl<T> TreeInteractor<T> {
         // sideways is not needed, it's only needed for Pick*One
         self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
         self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
-        Ok(())
+        Ok(false)
       }
       NodeDefinitionType::PickUpToOne => {
         let inode_mut = self.selected_interactor_node_mut();
@@ -268,7 +302,7 @@ impl<T> TreeInteractor<T> {
         self.cascade_invariants_sideways(self.cursor_path.clone(), ideal_next_state);
         self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
         self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
-        Ok(())
+        Ok(false)
       }
       NodeDefinitionType::PickExactlyOne => {
         // you can never unpick a PickExactlyOne node, you have to
@@ -281,7 +315,7 @@ impl<T> TreeInteractor<T> {
           self.cascade_invariants_sideways(self.cursor_path.clone(), ideal_next_state);
           self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
           self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
-          Ok(())
+          Ok(false)
         }
       }
     }
@@ -395,7 +429,6 @@ impl<T> TreeInteractor<T> {
           if isib_mut.picked == Some(true) {
             isib_mut.picked = Some(false);
             // and cascade up and down
-            // surely this won't cause a stack overflow clueless
             self.cascade_invariants_up(sib_path.clone(), false);
             self.cascade_invariants_down(sib_path.clone(), false);
           }

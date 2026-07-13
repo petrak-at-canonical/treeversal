@@ -140,7 +140,8 @@ pub enum NodeDefinitionType {
   /// As a special case, if this has any `PickMany` children,
   /// then it will display with a square button.
   /// Picking the button will (un)pick all of its `PickMany` children.
-  /// TODO nyi
+  /// This does not actually influence any picking state on this node,
+  /// it's just convenience.
   Text,
   /// The user picks this to indicate they are done.
   /// As convention, only the last child of the root should be this type.
