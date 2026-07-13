@@ -222,15 +222,6 @@ impl<T> TreeInteractor<T> {
       .collect()
   }
 
-  fn get_children_of_type(
-    &self,
-    ty: NodeDefinitionType,
-    path: impl Iterator<Item = usize>,
-  ) -> Option<impl Iterator<Item = &TreeNodeDefinition<T>> + '_> {
-    let parent = self.select_node_via_path(path)?;
-    Some(parent.children.iter().filter(move |kid| kid.ty == ty))
-  }
-
   /// Pop out logic into extra function because it's complicated
   fn edit_picked(&mut self, ept: EditPickedType) -> Result<bool, TreeInteractionError> {
     let node = self.selected_node();
@@ -316,7 +307,11 @@ impl<T> TreeInteractor<T> {
 
     // reborrows
     let node = self.selected_node();
-    let sib_count = node.children.len();
+    let node_idx_in_parent = *self.cursor_path.last().unwrap();
+    let parent = self
+      .select_node_via_path(parent_path.iter().cloned())
+      .unwrap();
+    let sib_count = parent.children.len();
     match node.ty {
       NodeDefinitionType::Text | NodeDefinitionType::AllDone => unreachable!("already handled"),
       NodeDefinitionType::PickMany => {
@@ -329,15 +324,20 @@ impl<T> TreeInteractor<T> {
         // make sure no siblings are picked
         if ideal_next_state {
           for i in 0..sib_count {
-            let sib_path = parent_path.iter().cloned().chain(std::iter::once(i));
-            let sib_node = self
-              .select_node_via_path(sib_path.clone())
-              .expect("if a node is selectable so is its parent");
-            if sib_node.ty == NodeDefinitionType::PickUpToOne {
-              let sib_inode_mut = self
-                .select_interactor_node_mut_via_path(sib_path.clone())
-                .unwrap();
-              sib_inode_mut.picked = Some(false);
+            if i != node_idx_in_parent {
+              // Reborrow
+              let sib_path = {
+                let mut path = parent_path.clone();
+                path.push(i);
+                path
+              };
+              let sib_node = self.select_node_via_path(sib_path.iter().cloned()).unwrap();
+              if sib_node.ty == NodeDefinitionType::PickUpToOne {
+                let sib_inode_mut = self
+                  .select_interactor_node_mut_via_path(sib_path.iter().cloned())
+                  .unwrap();
+                sib_inode_mut.picked = Some(false);
+              }
             }
           }
         }
@@ -349,7 +349,7 @@ impl<T> TreeInteractor<T> {
         // ALWAYS make sure no siblings are picked.
         // If none of them were picked, then we can't unpick this one.
         let mut any_sib_picked = false;
-        for i in 0..sib_count {
+        for i in 0..parent.children.len() {
           let sib_path = parent_path.iter().cloned().chain(std::iter::once(i));
           let sib_node = self
             .select_node_via_path(sib_path.clone())
@@ -407,7 +407,7 @@ impl TreeInteractorNode {
         && !found_first_pick_exactly_one
         && !special_case_exclude_fpeo;
       if found_fpeo {
-        found_first_pick_exactly_one = false;
+        found_first_pick_exactly_one = true;
       }
       children.push(TreeInteractorNode::create_mirroring_node(kid, found_fpeo));
     }

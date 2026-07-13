@@ -36,7 +36,6 @@
 
 mod interactor;
 pub use interactor::*;
-pub mod dsl;
 
 #[cfg(feature = "console")]
 pub mod console_driver;
@@ -78,15 +77,15 @@ impl<T> TreeNodeDefinition<T> {
   ///
   /// Intended for builder-style use: see [`Self::with_child`].
   pub fn new(ty: NodeDefinitionType, data: T, pick_children_needs_self: bool) -> Self {
-    Self::new_with_children(ty, data, Vec::new(), pick_children_needs_self)
+    Self::new_with_children(ty, data, pick_children_needs_self, Vec::new())
   }
 
   /// Create a new node with the following children.
   pub fn new_with_children(
     ty: NodeDefinitionType,
     data: T,
-    children: Vec<TreeNodeDefinition<T>>,
     pick_children_needs_self: bool,
+    children: Vec<TreeNodeDefinition<T>>,
   ) -> Self {
     Self {
       data,

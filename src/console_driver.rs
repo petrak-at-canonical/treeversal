@@ -145,11 +145,28 @@ impl<T> ConsoleDriver<T> {
       write!(&self.term, "{}", additional_style.apply_to(line)).unwrap();
     }
 
-    // Possibly write the checkbox
-    let mb_parent_ty = mb_parent.map(|p| p.ty);
-    match (mb_parent_ty, node.ty) {
-      // Special case 1: all done
-      (_, NodeDefinitionType::AllDone) => {
+    match node.ty {
+      NodeDefinitionType::PickMany => {
+        let boxx = if interactor.picked() == Some(true) {
+          &self.palette.picked_manybox
+        } else {
+          &self.palette.unpicked_manybox
+        };
+        write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
+      }
+      NodeDefinitionType::PickUpToOne | NodeDefinitionType::PickExactlyOne => {
+        let boxx = if interactor.picked() == Some(true) {
+          &self.palette.picked_onebox
+        } else {
+          &self.palette.unpicked_onebox
+        };
+        write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
+      }
+      NodeDefinitionType::Text => {
+        // TODO: Perhaps write half-slash box
+        // Otherwise no-op
+      }
+      NodeDefinitionType::AllDone => {
         write!(
           &self.term,
           "{}",
@@ -157,42 +174,6 @@ impl<T> ConsoleDriver<T> {
         )
         .unwrap();
       }
-      // Special case 2: half-slash
-      (None | Some(NodeDefinitionType::Text), NodeDefinitionType::PickManyChildren) => {
-        let kid_picked_count = interactor
-          .children()
-          .iter()
-          .filter(|ikid| ikid.picked() == Some(true))
-          .count();
-        let boxx = if kid_picked_count == 0 {
-          &self.palette.unpicked_manybox
-        } else if kid_picked_count == interactor.children().len() {
-          &self.palette.picked_manybox
-        } else {
-          &self.palette.some_picked_manybox
-        };
-        write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
-      }
-      (Some(NodeDefinitionType::PickManyChildren), _) => {
-        let boxx = match interactor.picked() {
-          Some(true) => &self.palette.picked_manybox,
-          Some(false) => &self.palette.unpicked_manybox,
-          // oh no
-          None => &self.palette.error_box,
-        };
-        write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
-      }
-      (Some(NodeDefinitionType::PickOneChild { .. }), _) => {
-        let boxx = match interactor.picked() {
-          Some(true) => &self.palette.picked_onebox,
-          Some(false) => &self.palette.unpicked_onebox,
-          // oh no
-          None => &self.palette.error_box,
-        };
-        write!(&self.term, "{}", additional_style.apply_to(boxx)).unwrap();
-      }
-      // draw nothing
-      (None | Some(NodeDefinitionType::Text) | Some(NodeDefinitionType::AllDone), _) => {}
     }
 
     // print the node!

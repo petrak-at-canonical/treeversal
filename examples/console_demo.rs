@@ -12,53 +12,84 @@ fn msg(s: impl AsRef<str>) -> StyledMsgAndData<()> {
 }
 
 pub fn main() {
-  use treeversal::dsl::*;
+  use NodeDefinitionType::*;
 
   let bread_branch = TreeNodeDefinition::new_with_children(
-    NodeDefinitionType::PickOneChild { mandatory: true },
+    Text,
     msg("Pick a bread (mandatory)"),
+    false,
     vec![
-      text(msg("white")),
-      pick_many(msg("wheat")).with_child(text(msg("gluten-free wheat bread?"))),
-      text(msg("rye")),
+      TreeNodeDefinition::new(PickExactlyOne, msg("white"), false),
+      TreeNodeDefinition::new(PickExactlyOne, msg("wheat"), true).with_child(
+        TreeNodeDefinition::new(PickMany, msg("gluten-free wheat bread?"), false),
+      ),
+      TreeNodeDefinition::new(PickExactlyOne, msg("rye"), false),
     ],
   );
 
   let meat_branch = TreeNodeDefinition::new_with_children(
-    NodeDefinitionType::PickOneChild { mandatory: false },
+    Text,
     msg("Pick a meat"),
+    false,
     vec![
-      text(msg("ham")),
-      text(msg("corned beef")),
-      text(msg("turkey")),
-      text(msg("chicken")),
+      TreeNodeDefinition::new(PickUpToOne, msg("ham"), false),
+      TreeNodeDefinition::new(PickUpToOne, msg("corned beef"), false),
+      TreeNodeDefinition::new(PickUpToOne, msg("turkey"), false),
+      TreeNodeDefinition::new(PickUpToOne, msg("chicken"), false),
     ],
   );
 
-  // TODO: make onion type branch turn off if onions is deselected?
-  let veggies_branch = pick_many(msg("Pick vegetables"))
-    .with_child(text(msg("lettuce")))
-    .with_child(text(msg("tomato")))
-    .with_child(text(msg("peppers")))
+  let veggies_branch = TreeNodeDefinition::new(Text, msg("Pick vegetables"), false)
+    .with_child(TreeNodeDefinition::new(PickMany, msg("lettuce"), false))
+    .with_child(TreeNodeDefinition::new(PickMany, msg("tomatoes"), false))
+    .with_child(TreeNodeDefinition::new(PickMany, msg("peppers"), false))
     .with_child(
-      pick_exactly_one(msg("onions"))
-        .with_child(text(msg("red onions")))
-        .with_child(text(msg("white onions")))
-        .with_child(text(msg("grilled onions"))),
+      TreeNodeDefinition::new(PickMany, msg("onions"), true)
+        .with_child(TreeNodeDefinition::new(
+          PickExactlyOne,
+          msg("red onions"),
+          false,
+        ))
+        .with_child(TreeNodeDefinition::new(
+          PickExactlyOne,
+          msg("white onions"),
+          false,
+        ))
+        .with_child(TreeNodeDefinition::new(
+          PickExactlyOne,
+          msg("grilled onions"),
+          false,
+        )),
     )
-    .with_child(text(msg("avocado")));
+    .with_child(TreeNodeDefinition::new(PickMany, msg("avocado"), false));
 
-  let sauce_branch = pick_many(msg("Pick sauces"))
-    .with_child(text(msg("mayonnaise")))
-    .with_child(text(msg("barbeque sauce")))
-    .with_child(pick_up_to_one(msg("oil and vinegar")).with_child(text(msg("extra vinegar?"))));
+  let sauce_branch = TreeNodeDefinition::new(Text, msg("Pick sauces"), false)
+    .with_child(TreeNodeDefinition::new(PickMany, msg("mayonnaise"), false))
+    .with_child(TreeNodeDefinition::new(
+      PickMany,
+      msg("barbeque sauce"),
+      false,
+    ))
+    .with_child(TreeNodeDefinition::new(
+      PickMany,
+      msg("oil and vinegar"),
+      false,
+    ));
 
-  let tree = TreeNodeDefinition::new(NodeDefinitionType::Text, msg("Customize your sandwich"))
-    .with_child(bread_branch)
-    .with_child(meat_branch)
-    .with_child(veggies_branch)
-    .with_child(sauce_branch)
-    .with_child(all_done(msg("Finished?")));
+  let tree = TreeNodeDefinition::new(
+    NodeDefinitionType::Text,
+    msg("Customize your sandwich"),
+    false,
+  )
+  .with_child(bread_branch)
+  .with_child(meat_branch)
+  .with_child(veggies_branch)
+  .with_child(sauce_branch)
+  .with_child(TreeNodeDefinition::new(
+    NodeDefinitionType::AllDone,
+    msg("Finished?"),
+    false,
+  ));
   let tree = TreeDefinition::new(tree);
 
   let mut driver = ConsoleDriver::new_stdout(Palette::fancy(), tree);
