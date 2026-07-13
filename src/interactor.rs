@@ -150,7 +150,14 @@ impl<T> TreeInteractor<T> {
   /// - `Err` if there was an error
   pub fn interact(&mut self, interaction: TreeInteraction) -> Result<bool, TreeInteractionError> {
     match interaction {
-      TreeInteraction::EditPicked(ept) => self.edit_picked(ept),
+      TreeInteraction::EditPicked(ept) => {
+        let node = self.selected_node();
+        match node.ty {
+          NodeDefinitionType::Text => Err(TreeInteractionError::TriedToEditUnpickableNode),
+          NodeDefinitionType::AllDone => Ok(true),
+          _ => self.perform_pick(ept).map(|()| false),
+        }
+      }
       TreeInteraction::SeekSibling { next } => {
         let (&index_in_parent, path_to_parent) = self
           .cursor_path
@@ -222,17 +229,11 @@ impl<T> TreeInteractor<T> {
       .collect()
   }
 
-  /// Pop out logic into extra function because it's complicated
-  fn edit_picked(&mut self, ept: EditPickedType) -> Result<bool, TreeInteractionError> {
+  // based on what the user has selected,
+  // decide whether to pick or unpick that path.
+  // then cascade invariants.
+  fn perform_pick(&mut self, ept: EditPickedType) -> Result<(), TreeInteractionError> {
     let node = self.selected_node();
-    // first, we need to handle special cases.
-    // is this the AllDone node?
-    if node.ty == NodeDefinitionType::AllDone {
-      // get out of here!
-      return Ok(true);
-    } else if node.ty == NodeDefinitionType::Text {
-      return Err(TreeInteractionError::TriedToEditUnpickableNode);
-    }
 
     // clone so we can borrow later
     let parent_path = self.cursor_path[0..self.cursor_path.len() - 1].to_owned();
@@ -246,132 +247,158 @@ impl<T> TreeInteractor<T> {
       }
     };
 
-    // Handle `pick_children_needs_self`
-    // handle parent.
-    if ideal_next_state {
-      let parent_node = self
-        .select_node_via_path(parent_path.clone().into_iter())
-        .expect("parent must be selectable");
-      if parent_node.pick_children_needs_self {
-        // we are picking this, so pick the parent
-        let parent_inode = self
-          .select_interactor_node_mut_via_path(parent_path.clone().into_iter())
-          .unwrap();
-        if let Some(ref mut slot) = parent_inode.picked {
-          *slot = true;
-        } else {
-          panic!("do not set `pick_children_needs_self` on an unpickable node")
-        }
-      }
-    }
-    // handle children.
-    // reborrow
     let node = self.selected_node();
-    if node.pick_children_needs_self {
-      if ideal_next_state {
-        // if we pick this node, the first PickExactlyOne node must be picked.
-        for idx in 0..node.children.len() {
-          let new_path = {
-            let mut path = self.cursor_path.clone();
-            path.push(idx);
-            path
-          };
-          let kid = self
-            .select_node_via_path(new_path.clone().into_iter())
-            .unwrap();
-          if kid.ty == NodeDefinitionType::PickExactlyOne {
-            let ikid_mut = self
-              .select_interactor_node_mut_via_path(new_path.clone().into_iter())
-              .unwrap();
-            ikid_mut.picked = Some(true);
-            break;
-          }
-        }
-      } else {
-        // if we unpick this node, all of its kids must be unpicked.
-        for idx in 0..node.children.len() {
-          let new_path = {
-            let mut path = self.cursor_path.clone();
-            path.push(idx);
-            path
-          };
-          let ikid_mut = self
-            .select_interactor_node_mut_via_path(new_path.clone().into_iter())
-            .unwrap();
-          if let Some(ref mut slot) = ikid_mut.picked {
-            *slot = false;
-          }
-        }
-      }
-    }
 
     // reborrows
     let node = self.selected_node();
-    let node_idx_in_parent = *self.cursor_path.last().unwrap();
-    let parent = self
-      .select_node_via_path(parent_path.iter().cloned())
-      .unwrap();
-    let sib_count = parent.children.len();
     match node.ty {
       NodeDefinitionType::Text | NodeDefinitionType::AllDone => unreachable!("already handled"),
       NodeDefinitionType::PickMany => {
         // Easy peasy
         let interactor_mut = self.selected_interactor_node_mut();
         interactor_mut.picked = Some(ideal_next_state);
-        Ok(false)
+        // sideways is not needed, it's only needed for Pick*One
+        self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
+        self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
+        Ok(())
       }
       NodeDefinitionType::PickUpToOne => {
-        // make sure no siblings are picked
-        if ideal_next_state {
-          for i in 0..sib_count {
-            if i != node_idx_in_parent {
-              // Reborrow
-              let sib_path = {
-                let mut path = parent_path.clone();
-                path.push(i);
-                path
-              };
-              let sib_node = self.select_node_via_path(sib_path.iter().cloned()).unwrap();
-              if sib_node.ty == NodeDefinitionType::PickUpToOne {
-                let sib_inode_mut = self
-                  .select_interactor_node_mut_via_path(sib_path.iter().cloned())
-                  .unwrap();
-                sib_inode_mut.picked = Some(false);
-              }
-            }
-          }
-        }
-        let interactor_mut = self.selected_interactor_node_mut();
-        interactor_mut.picked = Some(ideal_next_state);
-        Ok(false)
+        let inode_mut = self.selected_interactor_node_mut();
+        inode_mut.picked = Some(ideal_next_state);
+        self.cascade_invariants_sideways(self.cursor_path.clone(), ideal_next_state);
+        self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
+        self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
+        Ok(())
       }
       NodeDefinitionType::PickExactlyOne => {
-        // ALWAYS make sure no siblings are picked.
-        // If none of them were picked, then we can't unpick this one.
-        let mut any_sib_picked = false;
-        for i in 0..parent.children.len() {
-          let sib_path = parent_path.iter().cloned().chain(std::iter::once(i));
-          let sib_node = self
-            .select_node_via_path(sib_path.clone())
-            .expect("if a node is selectable so is its parent");
-          if sib_node.ty == NodeDefinitionType::PickExactlyOne {
-            let sib_inode_mut = self
-              .select_interactor_node_mut_via_path(sib_path.clone())
-              .unwrap();
-            if sib_inode_mut.picked == Some(true) {
-              any_sib_picked = true;
-            }
-            sib_inode_mut.picked = Some(false);
-          }
-        }
-
-        if !any_sib_picked && ideal_next_state == false {
-          // do not set this node to unpicked; maintains invariants
+        // you can never unpick a PickExactlyOne node, you have to
+        // pick a sibling and move the pick
+        if !ideal_next_state {
           Err(TreeInteractionError::TriedToUnpickButNeedExactlyOne)
         } else {
           let interactor_mut = self.selected_interactor_node_mut();
           interactor_mut.picked = Some(ideal_next_state);
-          Ok(false)
+          self.cascade_invariants_sideways(self.cursor_path.clone(), ideal_next_state);
+          self.cascade_invariants_up(self.cursor_path.clone(), ideal_next_state);
+          self.cascade_invariants_down(self.cursor_path.clone(), ideal_next_state);
+          Ok(())
+        }
+      }
+    }
+  }
+
+  fn cascade_invariants_up(&mut self, path: Vec<usize>, new_pick: bool) {
+    // if this node becomes picked, and the parent has
+    // `pick_children_needs_self`, pick the parent.
+    if new_pick {
+      let parent_path = path.split_last().unwrap().1;
+      let parent_node = self.select_node_via_path(parent_path.iter().cloned());
+      if let Some(parent_node) = parent_node
+        && parent_node.pick_children_needs_self
+      {
+        let iparent_mut = self
+          .select_interactor_node_mut_via_path(parent_path.iter().cloned())
+          .unwrap();
+        iparent_mut.picked = Some(true);
+
+        let parent_path = parent_path.to_vec();
+        // and recursively try again
+        self.cascade_invariants_up(parent_path.clone(), true);
+        self.cascade_invariants_sideways(parent_path.clone(), true);
+      }
+    }
+  }
+
+  fn cascade_invariants_down(&mut self, path: Vec<usize>, new_pick: bool) {
+    let node = self.select_node_via_path(path.iter().cloned()).unwrap();
+    if !node.pick_children_needs_self {
+      // no invariants if not pick_children_needs_self
+      return;
+    }
+    if new_pick {
+      // if this node is picked, it has pick_children_needs_self,
+      // it has PickExactlyOne nodes, and none of them are picked:
+      // pick the first of them.
+      let peo_kid_idxs = node
+        .children
+        .iter()
+        .enumerate()
+        .filter_map(|(i, kid)| {
+          if kid.ty == NodeDefinitionType::PickExactlyOne {
+            Some(i)
+          } else {
+            None
+          }
+        })
+        .collect::<Vec<_>>();
+      if !peo_kid_idxs.is_empty() {
+        let any_peo_kids_picked = peo_kid_idxs.iter().any(|idx| {
+          let mut kid_path = path.clone();
+          kid_path.push(*idx);
+          let ikid = self
+            .select_interactor_node_via_path(kid_path.into_iter())
+            .unwrap();
+          ikid.picked == Some(true)
+        });
+        if !any_peo_kids_picked {
+          // fix up invariants!
+          let mut first_ikid_path = path.clone();
+          first_ikid_path.push(peo_kid_idxs[0]);
+          let ikid_mut = self
+            .select_interactor_node_mut_via_path(first_ikid_path.iter().cloned())
+            .unwrap();
+          ikid_mut.picked = Some(true);
+          // and recurse
+          self.cascade_invariants_sideways(first_ikid_path.clone(), true);
+          self.cascade_invariants_down(first_ikid_path.clone(), true);
+        }
+      }
+    } else {
+      // if this node was UNpicked, it has pick_children_needs_self,
+      // then unpick all of its kids
+      let kid_count = node.children.len();
+      for ikid_idx in 0..kid_count {
+        let mut ikid_path = path.clone();
+        ikid_path.push(ikid_idx);
+        let ikid = self
+          .select_interactor_node_mut_via_path(ikid_path.iter().cloned())
+          .unwrap();
+        if ikid.picked == Some(true) {
+          ikid.picked = Some(false);
+          self.cascade_invariants_sideways(ikid_path.clone(), false);
+          self.cascade_invariants_down(ikid_path.clone(), false);
+        }
+      }
+    }
+  }
+
+  fn cascade_invariants_sideways(&mut self, path: Vec<usize>, new_pick: bool) {
+    let (&idx_in_parent, parent_path) = path.split_last().unwrap();
+    let node = self.select_node_via_path(path.iter().cloned()).unwrap();
+    let parent_node = self
+      .select_node_via_path(parent_path.iter().cloned())
+      .unwrap();
+    let sib_count = parent_node.children.len();
+
+    if new_pick
+      && (node.ty == NodeDefinitionType::PickUpToOne
+        || node.ty == NodeDefinitionType::PickExactlyOne)
+    {
+      // if we picked an exclusive node, unpick its siblings
+      for sib_idx in 0..sib_count {
+        if sib_idx != idx_in_parent {
+          let mut sib_path = parent_path.to_vec();
+          sib_path.push(sib_idx);
+          let isib_mut = self
+            .select_interactor_node_mut_via_path(sib_path.iter().cloned())
+            .unwrap();
+          if isib_mut.picked == Some(true) {
+            isib_mut.picked = Some(false);
+            // and cascade up and down
+            // surely this won't cause a stack overflow clueless
+            self.cascade_invariants_up(sib_path.clone(), false);
+            self.cascade_invariants_down(sib_path.clone(), false);
+          }
         }
       }
     }
