@@ -80,11 +80,11 @@ impl<T> TreeInteractor<T> {
     if tree.root.children.is_empty() {
       panic!("cannot create a TreeInteractor for an empty tree");
     }
-    let root = TreeInteractorNode::create_mirroring_tree(&tree);
+    let root = TreeInteractorNode::create_mirroring_node(&tree.root, false);
 
     Self {
       tree,
-      root: root,
+      root,
       // by default select the first child of the root
       cursor_path: vec![0],
     }
@@ -222,144 +222,195 @@ impl<T> TreeInteractor<T> {
       .collect()
   }
 
+  fn get_children_of_type(
+    &self,
+    ty: NodeDefinitionType,
+    path: impl Iterator<Item = usize>,
+  ) -> Option<impl Iterator<Item = &TreeNodeDefinition<T>> + '_> {
+    let parent = self.select_node_via_path(path)?;
+    Some(parent.children.iter().filter(move |kid| kid.ty == ty))
+  }
+
   /// Pop out logic into extra function because it's complicated
   fn edit_picked(&mut self, ept: EditPickedType) -> Result<bool, TreeInteractionError> {
-    // borrow immutably so we can mutably do it later
-    let parent_path = self.cursor_path[0..self.cursor_path.len() - 1].to_owned();
-    let parent = self
-      .select_node_via_path(parent_path.iter().copied())
-      .expect("if a path is valid, the path with last popped is too");
-    let idx_in_parent = *self.cursor_path.last().expect("cursor must be nonempty");
-
     let node = self.selected_node();
-    let interactor = self.selected_interactor_node();
-
     // first, we need to handle special cases.
     // is this the AllDone node?
     if node.ty == NodeDefinitionType::AllDone {
       // get out of here!
       return Ok(true);
-    }
-
-    // if the parent is a text node and this is a PickMany node, "picking" this
-    // edits its children.
-    if parent.ty == NodeDefinitionType::Text && node.ty == NodeDefinitionType::PickManyChildren {
-      let new_child_state = match ept {
-        EditPickedType::Select => true,
-        EditPickedType::Deselect => false,
-        EditPickedType::Toggle => {
-          // if all of them are picked, turn it off
-          // otherwise turn it on
-          let every_kid_picked = interactor
-            .children
-            .iter()
-            .all(|ikid| ikid.picked == Some(true));
-          !every_kid_picked
-        }
-      };
-
-      let interactor_mut = self.selected_interactor_node_mut();
-      for kid in interactor_mut.children.iter_mut() {
-        if let Some(ref mut picked) = kid.picked {
-          *picked = new_child_state;
-        }
-        // else uh, dunno how that happened
-      }
-
-      return Ok(false);
-    }
-
-    let Some(picked) = interactor.picked else {
+    } else if node.ty == NodeDefinitionType::Text {
       return Err(TreeInteractionError::TriedToEditUnpickableNode);
-    };
-    let new_val = match ept {
+    }
+
+    // clone so we can borrow later
+    let parent_path = self.cursor_path[0..self.cursor_path.len() - 1].to_owned();
+    let ideal_next_state = match ept {
       EditPickedType::Select => true,
       EditPickedType::Deselect => false,
-      EditPickedType::Toggle => !picked,
+      EditPickedType::Toggle => {
+        let interactor = self.selected_interactor_node();
+        let state = interactor.picked.expect("already handled unpickable nodes");
+        !state
+      }
     };
 
-    // if any amount of picked is OK, then we are done.
-    match parent.ty {
-      NodeDefinitionType::Text | NodeDefinitionType::AllDone => {
-        // uh not sure how this happened
-        // please do not make children of AllDone nodes
+    // Handle `pick_children_needs_self`
+    // handle parent.
+    if ideal_next_state {
+      let parent_node = self
+        .select_node_via_path(parent_path.clone().into_iter())
+        .expect("parent must be selectable");
+      if parent_node.pick_children_needs_self {
+        // we are picking this, so pick the parent
+        let parent_inode = self
+          .select_interactor_node_mut_via_path(parent_path.clone().into_iter())
+          .unwrap();
+        if let Some(ref mut slot) = parent_inode.picked {
+          *slot = true;
+        } else {
+          panic!("do not set `pick_children_needs_self` on an unpickable node")
+        }
+      }
+    }
+    // handle children.
+    // reborrow
+    let node = self.selected_node();
+    if node.pick_children_needs_self {
+      if ideal_next_state {
+        // if we pick this node, the first PickExactlyOne node must be picked.
+        for idx in 0..node.children.len() {
+          let new_path = {
+            let mut path = self.cursor_path.clone();
+            path.push(idx);
+            path
+          };
+          let kid = self
+            .select_node_via_path(new_path.clone().into_iter())
+            .unwrap();
+          if kid.ty == NodeDefinitionType::PickExactlyOne {
+            let ikid_mut = self
+              .select_interactor_node_mut_via_path(new_path.clone().into_iter())
+              .unwrap();
+            ikid_mut.picked = Some(true);
+            break;
+          }
+        }
+      } else {
+        // if we unpick this node, all of its kids must be unpicked.
+        for idx in 0..node.children.len() {
+          let new_path = {
+            let mut path = self.cursor_path.clone();
+            path.push(idx);
+            path
+          };
+          let ikid_mut = self
+            .select_interactor_node_mut_via_path(new_path.clone().into_iter())
+            .unwrap();
+          if let Some(ref mut slot) = ikid_mut.picked {
+            *slot = false;
+          }
+        }
+      }
+    }
+
+    // reborrows
+    let node = self.selected_node();
+    let sib_count = node.children.len();
+    match node.ty {
+      NodeDefinitionType::Text | NodeDefinitionType::AllDone => unreachable!("already handled"),
+      NodeDefinitionType::PickMany => {
+        // Easy peasy
+        let interactor_mut = self.selected_interactor_node_mut();
+        interactor_mut.picked = Some(ideal_next_state);
         Ok(false)
       }
-      NodeDefinitionType::PickManyChildren => {
-        let remut = self.selected_interactor_node_mut();
-        remut.picked = Some(new_val);
-        Ok(false)
-      }
-      NodeDefinitionType::PickOneChild { mandatory } => {
-        let parent_interactor_mut = self
-          .select_interactor_node_mut_via_path(parent_path.iter().copied())
-          .expect("if a path is valid, the path with last popped is too");
-
-        for (idx, sib) in parent_interactor_mut.children.iter_mut().enumerate() {
-          let is_me = idx == idx_in_parent;
-
-          if is_me {
-            // if we are trying to unpick this, but it's picked and one is
-            // mandatory to be picked, prevent it.
-            let prevent_unpicking = mandatory && picked == true && new_val == false;
-            if !prevent_unpicking {
-              sib.picked = Some(new_val);
-            }
-          } else {
-            // if another one is picked, then unpick it.
-            // this simulates "moving" the selection to the current one.
-            // as a bonus, if more than one in a group is selected somehow,
-            // this will fix it.
-            if new_val == true && sib.picked == Some(true) {
-              sib.picked = Some(false);
+      NodeDefinitionType::PickUpToOne => {
+        // make sure no siblings are picked
+        if ideal_next_state {
+          for i in 0..sib_count {
+            let sib_path = parent_path.iter().cloned().chain(std::iter::once(i));
+            let sib_node = self
+              .select_node_via_path(sib_path.clone())
+              .expect("if a node is selectable so is its parent");
+            if sib_node.ty == NodeDefinitionType::PickUpToOne {
+              let sib_inode_mut = self
+                .select_interactor_node_mut_via_path(sib_path.clone())
+                .unwrap();
+              sib_inode_mut.picked = Some(false);
             }
           }
         }
-
+        let interactor_mut = self.selected_interactor_node_mut();
+        interactor_mut.picked = Some(ideal_next_state);
         Ok(false)
+      }
+      NodeDefinitionType::PickExactlyOne => {
+        // ALWAYS make sure no siblings are picked.
+        // If none of them were picked, then we can't unpick this one.
+        let mut any_sib_picked = false;
+        for i in 0..sib_count {
+          let sib_path = parent_path.iter().cloned().chain(std::iter::once(i));
+          let sib_node = self
+            .select_node_via_path(sib_path.clone())
+            .expect("if a node is selectable so is its parent");
+          if sib_node.ty == NodeDefinitionType::PickExactlyOne {
+            let sib_inode_mut = self
+              .select_interactor_node_mut_via_path(sib_path.clone())
+              .unwrap();
+            if sib_inode_mut.picked == Some(true) {
+              any_sib_picked = true;
+            }
+            sib_inode_mut.picked = Some(false);
+          }
+        }
+
+        if !any_sib_picked && ideal_next_state == false {
+          // do not set this node to unpicked; maintains invariants
+          Err(TreeInteractionError::TriedToUnpickButNeedExactlyOne)
+        } else {
+          let interactor_mut = self.selected_interactor_node_mut();
+          interactor_mut.picked = Some(ideal_next_state);
+          Ok(false)
+        }
       }
     }
   }
 }
 
 impl TreeInteractorNode {
-  fn create_mirroring_tree<M>(tree: &TreeDefinition<M>) -> Self {
-    let children = (0..tree.root.children.len())
-      .map(|index| Self::create_mirroring_node(&tree.root, index))
-      .collect();
-    // The root node is never pickable
-    Self {
-      picked: None,
-      children,
-    }
-  }
-
-  /// Create the default state of this node with enough `children` to match the shape of the node definition
-  fn create_mirroring_node<M>(parent: &TreeNodeDefinition<M>, index: usize) -> Self {
-    let node = parent
-      .children
-      .get(index)
-      .expect("`index` must be in range");
-    let picked = match (parent.ty, node.ty) {
-      (NodeDefinitionType::Text, NodeDefinitionType::PickManyChildren) => {
-        // this type of node displays a checkbox, but it's not actually pickable,
-        // the checkbox is there to reflect the state of the children.
-        None
-      }
-      (NodeDefinitionType::Text | NodeDefinitionType::AllDone, _) => None,
-      (NodeDefinitionType::PickOneChild { mandatory }, _) => {
-        // auto-select the first node if mandatory
-        if mandatory && index == 0 {
+  /// Create the default state of this node with enough `children` to match the shape of the node definition.
+  fn create_mirroring_node<M>(node: &TreeNodeDefinition<M>, first_pick_exactly_one: bool) -> Self {
+    let picked = match node.ty {
+      NodeDefinitionType::PickMany => Some(false),
+      NodeDefinitionType::PickUpToOne => Some(false),
+      NodeDefinitionType::PickExactlyOne => {
+        // This may be incorrect! What if the parent is also automatically not-picked
+        // because *its* parent is PickExactlyOne?
+        // hence, preproc step
+        if first_pick_exactly_one {
           Some(true)
         } else {
           Some(false)
         }
       }
-      (NodeDefinitionType::PickManyChildren, _) => Some(false),
+      NodeDefinitionType::Text | NodeDefinitionType::AllDone => None,
     };
-    let children = (0..node.children.len())
-      .map(|subindex| Self::create_mirroring_node(node, subindex))
-      .collect();
+    let mut children = Vec::new();
+    let mut found_first_pick_exactly_one = false;
+    // do NOT pick the first PickExactlyOne if this node is unpicked and has
+    // `pick_children_need_self`
+    let special_case_exclude_fpeo = picked == Some(false) && node.pick_children_needs_self;
+    for idx in 0..node.children.len() {
+      let kid = &node.children[idx];
+      let found_fpeo = kid.ty == NodeDefinitionType::PickExactlyOne
+        && !found_first_pick_exactly_one
+        && !special_case_exclude_fpeo;
+      if found_fpeo {
+        found_first_pick_exactly_one = false;
+      }
+      children.push(TreeInteractorNode::create_mirroring_node(kid, found_fpeo));
+    }
     Self { picked, children }
   }
 
@@ -395,4 +446,7 @@ pub enum TreeInteractionError {
   NodeHasNoChildren,
   /// [`TreeInteraction::ExitNode`] on a child of the root node
   NodeHasNoParent,
+  /// [`TreeInteraction::EditPicked`] such that a family of [`NodeDefinitionType::PickExactlyOne`] nodes
+  /// would have no picked siblings
+  TriedToUnpickButNeedExactlyOne,
 }

@@ -1,6 +1,6 @@
 [package]
 name = "treeversal"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Petrichor Park <petrichor.park@canonical.com>"]
 description = "Traverse and manipulate a tree"
 license = "MIT"
