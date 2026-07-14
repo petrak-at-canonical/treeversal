@@ -36,6 +36,7 @@
 
 mod interactor;
 pub use interactor::*;
+pub mod dsl;
 
 #[cfg(feature = "console")]
 pub mod console_driver;
@@ -99,6 +100,14 @@ impl<T> TreeNodeDefinition<T> {
   /// Intended for builder-style use.
   pub fn with_child(mut self, child: TreeNodeDefinition<T>) -> Self {
     self.children.push(child);
+    self
+  }
+
+  /// Set `pick_children_needs_self`.
+  ///
+  /// Intended for builder-style use.
+  pub fn with_pick_children_needs_self(mut self, pick_children_needs_self: bool) -> Self {
+    self.pick_children_needs_self = pick_children_needs_self;
     self
   }
 

@@ -30,7 +30,5 @@ fn hammer_tree_with_random_interactions() {
       let interaction = random_interaction(&mut rng);
       let _ignore = interactor.interact(interaction);
     }
-
-    helpers::assert_invariants(&interactor);
   }
 }

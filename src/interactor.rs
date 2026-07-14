@@ -18,7 +18,7 @@ use crate::{NodeDefinitionType, TreeDefinition, TreeNodeDefinition};
 /// - `[0, 1]` is the second child of the first child of the root
 ///
 /// You may want to look at the implementation of [`TreeInteractor::select_node_via_path`] for more help.
-#[derive(Getters)]
+#[derive(Getters, Debug)]
 pub struct TreeInteractor<T> {
   /// The tree that this acts on.
   ///
@@ -63,7 +63,7 @@ pub enum EditPickedType {
 /// The state of an interaction with the tree.
 ///
 /// Mostly public for the benefit of drivers.
-#[derive(Getters, CopyGetters)]
+#[derive(Getters, CopyGetters, Debug)]
 pub struct TreeInteractorNode {
   /// If the node is not pickable (like a Text node), this is None.
   #[getset(get_copy = "pub")]
@@ -80,7 +80,10 @@ impl<T> TreeInteractor<T> {
     if tree.root.children.is_empty() {
       panic!("cannot create a TreeInteractor for an empty tree");
     }
-    let root = TreeInteractorNode::create_mirroring_node(&tree.root, false);
+    let root = TreeInteractorNode::create_mirroring_node(
+      &tree.root,
+      tree.root.ty == NodeDefinitionType::PickExactlyOne,
+    );
 
     Self {
       tree,
@@ -253,9 +256,15 @@ impl<T> TreeInteractor<T> {
       if checkbox_kids.is_empty() {
         return Err(TreeInteractionError::TriedToEditUnpickableNode);
       }
-      let all_picked = checkbox_kids.iter().all(|p| *p == Some(true));
-      let new_state = !all_picked;
-      // fix up the children
+      let new_state = match ept {
+        EditPickedType::Select => true,
+        EditPickedType::Deselect => false,
+        EditPickedType::Toggle => {
+          let all_picked = checkbox_kids.iter().all(|p| *p == Some(true));
+          !all_picked
+        }
+      };
+      // fix up the children pickedness
       let kid_count = node.children.len();
       for i in 0..kid_count {
         let mut kid_path = self.cursor_path.clone();
@@ -445,9 +454,6 @@ impl TreeInteractorNode {
       NodeDefinitionType::PickMany => Some(false),
       NodeDefinitionType::PickUpToOne => Some(false),
       NodeDefinitionType::PickExactlyOne => {
-        // This may be incorrect! What if the parent is also automatically not-picked
-        // because *its* parent is PickExactlyOne?
-        // hence, preproc step
         if first_pick_exactly_one {
           Some(true)
         } else {
@@ -480,19 +486,21 @@ impl TreeInteractorNode {
     F: Fn(&TreeInteractorNode) -> bool + Copy,
   {
     let mut paths = Vec::new();
-    for (idx, kid) in self.children().iter().enumerate() {
+    for (kid_idx, kid) in self.children().iter().enumerate() {
       let ok = f(kid);
       if ok {
-        paths.push(vec![idx]);
+        paths.push(vec![kid_idx]);
       }
 
       let subpaths = kid.get_all_paths_to_children_filtered(f);
       for subpath in subpaths {
-        let mut extended = vec![idx];
+        // prepend this index onto what the kid reported
+        let mut extended = vec![kid_idx];
         extended.extend(subpath);
         paths.push(extended);
       }
     }
+
     paths
   }
 }
